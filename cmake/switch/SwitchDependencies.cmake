@@ -203,7 +203,7 @@ target_link_libraries(SwitchVulkanDriver INTERFACE
 	"${SWITCH_PORTLIBS}/lib/libelf.a"
 	"${SWITCH_PORTLIBS}/lib/libexpat.a"
 	"${SWITCH_PORTLIBS}/lib/libzstd.a"
-	"${SWITCH_PORTLIBS}/lib/libz.a"
+	"${SWITCH_PORTLIBS}/lib/libz.a")
 	# The nouveau winsys provides NVHOST and NVMAP access. --> Deleted
 
 add_compile_definitions(VK_USE_PLATFORM_VI_NN)
