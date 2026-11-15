@@ -21,27 +21,26 @@ jobs:
       - name: Inspect
         shell: bash
         run: |
-          set -x
+          set +e +o pipefail
           P=/opt/devkitpro/portlibs/switch
           NM=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-nm
-          cat /etc/os-release | head -3
-          grep -vE '^\s*(#|$)' /opt/devkitpro/pacman/etc/pacman.conf /etc/pacman.conf 2>/dev/null || true
-          ls /etc/pacman.d 2>/dev/null || true
-          dkp-pacman -Q || true
-          ls -la $P/lib | head -200
-          ls $P/lib/cmake || true
-          ls -R $P/lib/cmake/OpenGL 2>/dev/null && cat $P/lib/cmake/OpenGL/*.cmake | head -200
-          ls -R $P/share | head -60
-          cat $P/lib/pkgconfig/vulkan.pc $P/lib/pkgconfig/glesv2.pc $P/lib/pkgconfig/egl.pc 2>/dev/null || true
-          ls /var/cache/pacman/pkg /opt/devkitpro/pacman/var/cache/pacman/pkg 2>/dev/null || true
-          echo "=== undefined symbols in unified libvulkan.a (elf/drm/nouveau) ==="
-          $NM -u $P/lib/libvulkan.a 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(elf|gelf|drm|nouveau|XML_|ZSTD_|inflate|deflate|crc32)' || true
-          echo "=== are they defined anywhere inside the archive? ==="
-          $NM --defined-only $P/lib/libvulkan.a 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(elf_|gelf_|drm|nouveau_device)' | head -20 || true
-          for f in $P/lib/libGL*.a $P/lib/libEGL*.a $P/lib/libgallium*.a; do [ -f "$f" ] || continue; echo "== $f"; $NM -u "$f" 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(elf|gelf|drm|nouveau)' | head -40; done
-          echo "=== sync & search packages ==="
-          dkp-pacman -Sy --noconfirm || true
-          dkp-pacman -Sl | grep -Ei 'libelf|drm|mesa|sdl2|ntfs|deko3d|turbo|expat' || true
-          dkp-pacman -Si switch-libelf switch-libdrm_nouveau switch-mesa || true
-          command -v bison flex python3; python3 -c 'import mako; print(mako.__version__)' || true
-          ls $P/include/SDL2 2>/dev/null | head -3; ls $P/lib/libSDL2* $P/lib/libntfs* /opt/devkitpro/libnx/lib/libdeko3d* 2>/dev/null || true
+          echo "=== cmake dirs ==="; ls $P/lib/cmake
+          echo "=== OpenGL config ==="; for f in $P/lib/cmake/OpenGL/*.cmake; do echo "## $f"; cat "$f"; done
+          echo "=== share ==="; ls -R $P/share | grep -iE 'mesa|nvk|revision' ; cat $P/share/mesa-switch/revision 2>/dev/null
+          echo "=== pc ==="; grep -H '^Version' $P/lib/pkgconfig/*.pc | grep -iE 'gl|egl|vulkan|sdl|elf|drm'
+          echo "=== vulkan libs ==="; ls -la $P/lib/libvulkan* $P/lib/libgallium* $P/lib/libglapi* 2>&1
+          echo "=== undefined elf/drm syms by archive ==="
+          for f in $P/lib/libvulkan.a $P/lib/libnvk.a $P/lib/libnouveau_ws.a $P/lib/libnouveau_horizon.a $P/lib/libEGL.a $P/lib/libGL.a $P/lib/libGLESv2.a $P/lib/libnak_rs.a; do
+            [ -f "$f" ] || continue
+            echo "## $f"; $NM -u "$f" 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(g?elf[0-9]*_|drm|nouveau_(device|bo|pushbuf|client))'
+          done
+          echo "=== defined elf_ anywhere in portlibs? ==="
+          for f in $P/lib/*.a; do $NM --defined-only "$f" 2>/dev/null | grep -qE ' T elf_begin$' && echo "elf_begin in $f"; done
+          echo "=== cache ==="; ls /var/cache/pacman/pkg /opt/devkitpro/pacman/var/cache/pacman/pkg 2>&1
+          echo "=== sync & search ==="
+          dkp-pacman -Sy --noconfirm
+          dkp-pacman -Sl dkp-libs | grep -Ei 'libelf|drm|mesa|libexpat'
+          dkp-pacman -Si switch-libelf switch-mesa switch-libdrm_nouveau
+          dkp-pacman -Sp switch-libelf switch-mesa
+          echo "=== host tools ==="; command -v bison flex python3 make cmake ninja; python3 -c 'import mako; print("mako", mako.__version__)'
+          ls /opt/devkitpro/libnx/lib | grep -i deko; ls /opt/devkitpro/tools/bin | head -50
