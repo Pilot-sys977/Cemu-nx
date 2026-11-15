@@ -179,6 +179,9 @@ jobs:
         run: |
           set -e
           ls -la switch_launcher/cemu.nro switch_launcher/romfs/emu switch_launcher/romfs/fwd
+          # The SDL launcher must link the stock Mesa 20.1.0 stage, not the core's Mesa 26.
+          grep -E 'launcher_mesa20/.*/lib(EGL|GLESv2|glapi|drm_nouveau)\.a' switch_launcher/build/cemu.map | sort -u | head -8
+          ! grep -E '/opt/devkitpro/portlibs/switch/lib/lib(EGL|GLESv2|glapi|vulkan)\.a' switch_launcher/build/cemu.map
           # NRO magic lives at offset 0x10.
           [ "$(dd if=switch_launcher/cemu.nro bs=1 skip=16 count=4 2>/dev/null)" = "NRO0" ]
           (cd switch_launcher && sha256sum cemu.nro romfs/emu/*.nro) | tee SHA256SUMS.txt

@@ -53,6 +53,9 @@ jobs:
           LAUNCHER_MESA20_ROOT="$GITHUB_WORKSPACE/dependencies/switch_deps/launcher_mesa20/opt/devkitpro/portlibs/switch" \
             bash build_switch_all.sh
           [ "$(dd if=switch_launcher/cemu.nro bs=1 skip=16 count=4 2>/dev/null)" = "NRO0" ]
+          # The SDL launcher must link the stock Mesa 20.1.0 stage, not the core's Mesa 26.
+          grep -E 'launcher_mesa20/.*/lib(EGL|GLESv2|glapi|drm_nouveau)\.a' switch_launcher/build/cemu.map | sort -u | head -8
+          ! grep -E '/opt/devkitpro/portlibs/switch/lib/lib(EGL|GLESv2|glapi|vulkan)\.a' switch_launcher/build/cemu.map
           (cd switch_launcher && sha256sum cemu.nro romfs/emu/*.nro) | tee SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
