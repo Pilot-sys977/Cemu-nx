@@ -25,7 +25,13 @@ DOWNLOADS="${SWITCH_DEPS_ROOT}/downloads"
 
 MESA_VER=20.1.0
 MESA_DIR=mesa-${MESA_VER}-rc3
-MESA_URL="https://mesa.freedesktop.org/archive/${MESA_DIR}.tar.xz"
+# Mesa moves old releases into older-versions/; try the official locations.
+MESA_URLS=(
+	"https://archive.mesa3d.org/older-versions/20.x/${MESA_DIR}.tar.xz"
+	"https://mesa.freedesktop.org/archive/older-versions/20.x/${MESA_DIR}.tar.xz"
+	"https://archive.mesa3d.org/${MESA_DIR}.tar.xz"
+	"https://mesa.freedesktop.org/archive/${MESA_DIR}.tar.xz"
+)
 MESA_SHA=c90b75ea34302ebde9b81b87c5642fa864c40fe9c4ad34ce0793170c1413168d
 PKGS_RAW="https://raw.githubusercontent.com/devkitPro/pacman-packages/master/switch/mesa"
 declare -A MESA_PATCHES=(
@@ -63,14 +69,25 @@ done
 python3 -c 'import mako' 2>/dev/null || die "python3 Mako is required (pip install Mako)"
 export PATH="${DEVKITPRO}/tools/bin:${DEVKITPRO}/devkitA64/bin:${PATH}"
 
+# fetch <out> <sha256> <url>...: first URL whose content matches the hash wins.
 fetch() {
-	local url="$1" out="$2" sha="$3"
-	if [[ ! -f "${out}" ]] || ! echo "${sha}  ${out}" | sha256sum --check --status -; then
-		rm -f "${out}"
-		curl -fL --retry 4 --retry-delay 5 -o "${out}.part" "${url}"
-		mv "${out}.part" "${out}"
+	local out="$1" sha="$2" url
+	shift 2
+	if [[ -f "${out}" ]] && echo "${sha}  ${out}" | sha256sum --check --status -; then
+		return
 	fi
-	echo "${sha}  ${out}" | sha256sum --check --strict - || die "checksum mismatch: ${url}"
+	for url in "$@"; do
+		rm -f "${out}" "${out}.part"
+		if curl -fL --retry 3 --retry-delay 5 -o "${out}.part" "${url}" &&
+		   echo "${sha}  ${out}.part" | sha256sum --check --status -; then
+			mv "${out}.part" "${out}"
+			echo "Fetched ${url}"
+			return
+		fi
+		echo "Unusable source (missing or checksum mismatch): ${url}" >&2
+	done
+	rm -f "${out}.part"
+	die "could not obtain $(basename "${out}") with SHA-256 ${sha}"
 }
 
 rm -rf "${STAGE}" "${WORK}"
@@ -86,7 +103,7 @@ fi
 echo ">> meson $("${MESON}" --version)"
 
 echo ">> libdrm_nouveau ${DRM_VER}"
-fetch "${DRM_URL}" "${DOWNLOADS}/libdrm_nouveau-${DRM_VER}.tar.gz" "${DRM_SHA}"
+fetch "${DOWNLOADS}/libdrm_nouveau-${DRM_VER}.tar.gz" "${DRM_SHA}" "${DRM_URL}"
 tar -xzf "${DOWNLOADS}/libdrm_nouveau-${DRM_VER}.tar.gz" -C "${WORK}"
 make -C "${WORK}/libdrm_nouveau-${DRM_VER}"
 make -C "${WORK}/libdrm_nouveau-${DRM_VER}" DESTDIR="${STAGE}" install
@@ -106,9 +123,9 @@ EOF
 chmod +x "${WORK}/pkg-config"
 
 echo ">> Mesa ${MESA_VER}"
-fetch "${MESA_URL}" "${DOWNLOADS}/${MESA_DIR}.tar.xz" "${MESA_SHA}"
+fetch "${DOWNLOADS}/${MESA_DIR}.tar.xz" "${MESA_SHA}" "${MESA_URLS[@]}"
 for patch_name in "${!MESA_PATCHES[@]}"; do
-	fetch "${PKGS_RAW}/${patch_name}" "${DOWNLOADS}/${patch_name}" "${MESA_PATCHES[${patch_name}]}"
+	fetch "${DOWNLOADS}/${patch_name}" "${MESA_PATCHES[${patch_name}]}" "${PKGS_RAW}/${patch_name}"
 done
 tar -xJf "${DOWNLOADS}/${MESA_DIR}.tar.xz" -C "${WORK}"
 (
