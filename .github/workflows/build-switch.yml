@@ -34,9 +34,11 @@ jobs:
           grep -n 'kButtonId_Home, "Home", "R"' \
             src/platform/switch/SwitchInput.cpp
 
+      
       - name: Build Switch emulator core
         shell: bash
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           export PATH="$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
           bash dist/switch/build.sh
 
