@@ -193,18 +193,66 @@ endif()
 set(OPENGL_SWITCH_VULKAN_LIBRARY "${SWITCH_MESA_LOCAL_VULKAN_ARCHIVE}")
 list(PREPEND CMAKE_PREFIX_PATH "${SWITCH_MESA_SDK_ROOT}")
 
+# libelf: some Mesa SDK builds parse cubin metadata through libelf, while the
+# unified Mesa 26.2.4 SDK does it with the Rust `object` crate inside
+# libvulkan.a and references no elf_* symbol.  Inspect the actual driver
+# objects and only require libelf when they really use its API.
+set(_switch_mesa_elf_probe "${NVK_LOCAL}")
+if(EXISTS "${SWITCH_MESA_SDK_ROOT}/lib/libEGL.a")
+	list(APPEND _switch_mesa_elf_probe "${SWITCH_MESA_SDK_ROOT}/lib/libEGL.a")
+endif()
+set(_switch_nm "${CMAKE_NM}")
+if(NOT _switch_nm)
+	set(_switch_nm "${DEVKITPRO}/devkitA64/bin/aarch64-none-elf-nm")
+endif()
+execute_process(
+	COMMAND "${_switch_nm}" -u ${_switch_mesa_elf_probe}
+	OUTPUT_VARIABLE _switch_mesa_undefined
+	RESULT_VARIABLE _switch_nm_result
+	ERROR_QUIET)
+if(NOT _switch_nm_result EQUAL 0)
+	message(FATAL_ERROR "Could not inspect Mesa driver symbols with ${_switch_nm}")
+endif()
+string(REGEX MATCHALL "U g?elf(32|64)?_[A-Za-z0-9_]+" _switch_mesa_elf_refs
+	"${_switch_mesa_undefined}")
+find_library(SWITCH_LIBELF_LIBRARY NAMES elf
+	PATHS "${SWITCH_MESA_SDK_ROOT}/lib" "${SWITCH_PORTLIBS}/lib"
+	NO_DEFAULT_PATH)
+set(_switch_mesa_libelf)
+if(_switch_mesa_elf_refs)
+	if(NOT SWITCH_LIBELF_LIBRARY)
+		list(REMOVE_DUPLICATES _switch_mesa_elf_refs)
+		message(FATAL_ERROR
+			"This Mesa SDK references libelf (${_switch_mesa_elf_refs}) but no "
+			"Switch libelf.a was found in ${SWITCH_MESA_SDK_ROOT}/lib or "
+			"${SWITCH_PORTLIBS}/lib.")
+	endif()
+	set(_switch_mesa_libelf "${SWITCH_LIBELF_LIBRARY}")
+	message(STATUS "Mesa SDK uses libelf: ${SWITCH_LIBELF_LIBRARY}")
+else()
+	message(STATUS "Mesa SDK references no libelf symbols; libelf is not linked")
+	if(NOT SWITCH_LIBELF_LIBRARY)
+		# The SDK's OpenGLConfig.cmake insists on an elf library whenever Zink
+		# is present.  The ELF reader it needs lives in the localized Vulkan
+		# archive, which is already part of the same link group.
+		set(_OPENGL_elf_LIBRARY "${SWITCH_MESA_LOCAL_VULKAN_ARCHIVE}" CACHE FILEPATH
+			"ELF support for Zink (provided by the unified Mesa Vulkan archive)" FORCE)
+	endif()
+endif()
+
 add_library(SwitchVulkanDriver INTERFACE)
 target_include_directories(SwitchVulkanDriver INTERFACE
 	"${CMAKE_SOURCE_DIR}/dependencies/Vulkan-Headers/include"
 	"${NVK_DIR}/include")
 target_link_libraries(SwitchVulkanDriver INTERFACE
 	"${NVK_LOCAL}"
-	# Mesa 26.2 NVK parses cubin metadata through libelf.
-	"${SWITCH_PORTLIBS}/lib/libelf.a"
+	${_switch_mesa_libelf}
 	"${SWITCH_PORTLIBS}/lib/libexpat.a"
 	"${SWITCH_PORTLIBS}/lib/libzstd.a"
 	"${SWITCH_PORTLIBS}/lib/libz.a")
-	# The nouveau winsys provides NVHOST and NVMAP access. --> Deleted
+# The unified Mesa SDK provides the NVHOST/NVMAP winsys itself (libnouveau_ws
+# inside libvulkan.a and the libdrm-compatible nouveau_* API inside libEGL.a),
+# so devkitPro's legacy libdrm_nouveau.a must not be linked into the core.
 
 add_compile_definitions(VK_USE_PLATFORM_VI_NN)
 

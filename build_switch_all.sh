@@ -14,6 +14,15 @@ export TMPDIR=/tmp TMP=/tmp TEMP=/tmp
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+# CEMU_SWITCH_SKIP_CORES=1 packages cores that were already built (for example
+# by separate CI jobs) instead of rebuilding them.
+if [[ "${CEMU_SWITCH_SKIP_CORES:-0}" == 1 ]]; then
+	echo "[1/5] Using prebuilt Vulkan/OpenGL emulator"
+	echo "[2/5] Using prebuilt Deko3D emulator"
+	for core in "$ROOT/bin/cemu_core.nro" "$ROOT/build_switch_deko/bin/cemu_core.nro"; do
+		[[ -s "$core" ]] || { echo "Missing prebuilt core: $core" >&2; exit 1; }
+	done
+else
 echo "[1/5] Building the Vulkan/OpenGL emulator"
 RELEASE_VERSION="$RELEASE_VERSION" BUILD_JOBS="$BUILD_JOBS" bash "$ROOT/dist/switch/build.sh"
 
@@ -21,6 +30,7 @@ echo "[2/5] Building the Deko3D emulator"
 CEMU_SWITCH_DEKO3D_RUNTIME=ON SWITCH_BUILD_DIR=build_switch_deko \
 	CEMU_RUNTIME_OUTPUT_DIR="$ROOT/build_switch_deko/bin" \
 	RELEASE_VERSION="$RELEASE_VERSION" BUILD_JOBS="$BUILD_JOBS" bash "$ROOT/dist/switch/build.sh"
+fi
 
 echo "[3/5] Staging the emulators"
 mkdir -p "$ROOT/switch_launcher/romfs/emu"
@@ -51,7 +61,14 @@ if [[ -z "$MESA20_PACKAGE" ]]; then
 		MESA20_PACKAGE="${mesa20_packages[${#mesa20_packages[@]}-1]}"
 	fi
 fi
-if [[ -n "$MESA20_PACKAGE" && -f "$MESA20_PACKAGE" ]]; then
+if [[ -n "${LAUNCHER_MESA20_ROOT:-}" ]]; then
+	# A stage produced by dist/switch/deps/build_launcher_mesa20.sh.
+	MESA20_ROOT="$LAUNCHER_MESA20_ROOT"
+	grep -q '^Version: 20\.1\.0' "$MESA20_ROOT/lib/pkgconfig/glesv2.pc" 2>/dev/null || {
+		echo "LAUNCHER_MESA20_ROOT does not contain Mesa 20.1.0: $MESA20_ROOT" >&2
+		exit 1
+	}
+elif [[ -n "$MESA20_PACKAGE" && -f "$MESA20_PACKAGE" ]]; then
 	mkdir -p "$MESA20_STAGE"
 	tar -xf "$MESA20_PACKAGE" -C "$MESA20_STAGE"
 elif grep -q '^Version: 20\.1\.0' "$DEVKITPRO/portlibs/switch/lib/pkgconfig/glesv2.pc" 2>/dev/null; then
@@ -59,6 +76,8 @@ elif grep -q '^Version: 20\.1\.0' "$DEVKITPRO/portlibs/switch/lib/pkgconfig/gles
 else
 	echo "Stock switch-mesa 20.1.0 is required for the SDL launcher." >&2
 	echo "Cache it with: dkp-pacman -Sw switch-mesa" >&2
+	echo "or build it from source with dist/switch/deps/build_launcher_mesa20.sh" >&2
+	echo "and pass LAUNCHER_MESA20_ROOT=<stage>/opt/devkitpro/portlibs/switch" >&2
 	exit 1
 fi
 cd "$ROOT/switch_launcher"

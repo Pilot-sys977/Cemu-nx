@@ -1,6 +1,7 @@
-
-name: Build Cemu-nx Switch Core
-#change
+name: Build Cemu-nx Switch (full cemu.nro)
+# Builds both emulator cores (NVK Vulkan/OpenGL and Deko3D), the HOME Menu
+# forwarder and the SDL launcher, and packages the all-in-one
+# switch_launcher/cemu.nro exactly as build_switch_all.sh does.
 on:
   workflow_dispatch:
   push:
@@ -8,21 +9,42 @@ on:
       - mario-party-10-fix
     paths:
       - .github/workflows/build-switch.yml
-      - dist/switch/build.sh
-      - cmake/Toolchain-Switch.cmake
+      - build_switch_all.sh
+      - CMakeLists.txt
+      - cmake/**
+      - dist/switch/**
+      - src/**
+      - switch_launcher/**
+      - dependencies/switch_shims/**
+
+env:
+  DEVKITPRO: /opt/devkitpro
+  # The image ships the unified Mesa 26.2.x SDK directly in portlibs.
+  SWITCH_MESA_SDK_ROOT: /opt/devkitpro/portlibs/switch
+  # The bundled PGO profiles need GCC 16.1.0; the image provides GCC 15.2.0.
+  CEMU_SWITCH_PGO: "OFF"
+  RELEASE_VERSION: "1.3.2"
+  BUILD_JOBS: "4"
+
 jobs:
-  build-switch:
+  core:
+    name: Core (${{ matrix.backend }})
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     container:
       image: ghcr.io/autorunhq/switch-dev:latest
-
-    env:
-      DEVKITPRO: /opt/devkitpro
-      SWITCH_MESA_SDK_ROOT: /opt/devkitpro/portlibs/switch
-      BUILD_JOBS: "2"
-      CEMU_SWITCH_PGO: "OFF"
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: nvk
+            deko: "OFF"
+            build_dir: build_switch
+            out_dir: bin
+          - backend: deko3d
+            deko: "ON"
+            build_dir: build_switch_deko
+            out_dir: build_switch_deko/bin
     steps:
       - name: Check out modified Cemu-nx
         uses: actions/checkout@v4
@@ -32,10 +54,8 @@ jobs:
       - name: Verify HOME mapping
         shell: bash
         run: |
-          grep -n 'kButtonId_Home, "Home", "R"' \
-            src/platform/switch/SwitchInput.cpp
+          grep -n 'kButtonId_Home, "Home", "R"' src/platform/switch/SwitchInput.cpp
 
-      
       - name: Build Boost for Switch
         shell: bash
         run: |
@@ -43,27 +63,131 @@ jobs:
           export PATH="$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
           bash dist/switch/deps/build_boost.sh
 
-      - name: Build Switch emulator core
+      - name: Report Mesa SDK link closure (informational)
+        if: matrix.backend == 'nvk'
+        shell: bash
+        continue-on-error: true
+        run: python3 dist/switch/deps/check_mesa_link_closure.py "$SWITCH_MESA_SDK_ROOT"
+
+      - name: Build emulator core
         shell: bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           export PATH="$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
-          echo "=== Searching for libelf ==="
-          find /opt/devkitpro -name 'libelf.a' -print
-          echo "=== Checking libelf headers ==="
-          find /opt/devkitpro -name 'libelf.h' -print
-          echo "=== Checking Switch package manager ==="
-          command -v dkp-pacman || true
-          echo "=== Available libelf packages ==="
-          dkp-pacman -Ss libelf || true
-          echo "=== Available Switch ELF packages ==="
-          dkp-pacman -Sl switch | grep -Ei 'elf|mesa' || true
-          bash dist/switch/build.sh
+          CEMU_SWITCH_DEKO3D_RUNTIME=${{ matrix.deko }} \
+          SWITCH_BUILD_DIR=${{ matrix.build_dir }} \
+          CEMU_RUNTIME_OUTPUT_DIR="$GITHUB_WORKSPACE/${{ matrix.out_dir }}" \
+            bash dist/switch/build.sh
+          ls -la "${{ matrix.out_dir }}/cemu_core.nro"
+          sha256sum "${{ matrix.out_dir }}/cemu_core.nro"
 
-      - name: Upload compiled core
-        if: success()
+      - name: Collect launcher build inputs
+        if: matrix.backend == 'nvk'
+        shell: bash
+        run: |
+          # switch_launcher/Makefile links these from build_switch/.
+          tar -czf launcher-inputs.tar.gz \
+            build_switch/_deps/rapidjson-src/include \
+            build_switch/_deps/libsmb2-src/include \
+            build_switch/_deps/libusbhsfs-src/include \
+            build_switch/_deps/libsmb2-build/lib/libsmb2.a \
+            build_switch/_deps/libusbhsfs-build/liblibusbhsfs.a \
+            build_switch/dependencies/ZArchive/libzarchive.a
+
+      - name: Upload core
         uses: actions/upload-artifact@v4
         with:
-          name: modified-cemu-core
-          path: bin/cemu_core.nro
+          name: core-${{ matrix.backend }}
+          path: ${{ matrix.out_dir }}/cemu_core.nro
+          if-no-files-found: error
+
+      - name: Upload launcher build inputs
+        if: matrix.backend == 'nvk'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-inputs
+          path: launcher-inputs.tar.gz
+          if-no-files-found: error
+
+  launcher-mesa20:
+    name: Launcher Mesa 20.1.0 (from source)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/autorunhq/switch-dev:latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Restore cached stage
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: dependencies/switch_deps/launcher_mesa20
+          key: launcher-mesa20-${{ hashFiles('dist/switch/deps/build_launcher_mesa20.sh', 'dist/switch/deps/common.sh') }}
+
+      - name: Build stock switch-mesa 20.1.0 + libdrm_nouveau 1.0.1
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash dist/switch/deps/build_launcher_mesa20.sh
+
+      - name: Upload stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-mesa20
+          path: dependencies/switch_deps/launcher_mesa20
+          if-no-files-found: error
+
+  package:
+    name: Package cemu.nro
+    needs: [core, launcher-mesa20]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/autorunhq/switch-dev:latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download cores and launcher inputs
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage build outputs
+        shell: bash
+        run: |
+          mkdir -p bin build_switch_deko/bin dependencies/switch_deps/launcher_mesa20
+          cp artifacts/core-nvk/cemu_core.nro bin/cemu_core.nro
+          cp artifacts/core-deko3d/cemu_core.nro build_switch_deko/bin/cemu_core.nro
+          tar -xzf artifacts/launcher-inputs/launcher-inputs.tar.gz
+          cp -a artifacts/launcher-mesa20/. dependencies/switch_deps/launcher_mesa20/
+
+      - name: Build forwarder and launcher
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          CEMU_SWITCH_SKIP_CORES=1 \
+          LAUNCHER_MESA20_ROOT="$GITHUB_WORKSPACE/dependencies/switch_deps/launcher_mesa20/opt/devkitpro/portlibs/switch" \
+            bash build_switch_all.sh
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -e
+          ls -la switch_launcher/cemu.nro switch_launcher/romfs/emu switch_launcher/romfs/fwd
+          # NRO magic lives at offset 0x10.
+          [ "$(dd if=switch_launcher/cemu.nro bs=1 skip=16 count=4 2>/dev/null)" = "NRO0" ]
+          (cd switch_launcher && sha256sum cemu.nro romfs/emu/*.nro) | tee SHA256SUMS.txt
+
+      - name: Upload cemu.nro
+        uses: actions/upload-artifact@v4
+        with:
+          name: cemu-nx-${{ env.RELEASE_VERSION }}-mp10-home-fix
+          path: |
+            switch_launcher/cemu.nro
+            SHA256SUMS.txt
           if-no-files-found: error

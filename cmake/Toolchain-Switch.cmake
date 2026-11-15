@@ -29,8 +29,11 @@ if(CEMU_SWITCH_DEKO3D_RUNTIME)
     set(ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
     set(ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
 else()
+    # OpenGL (native NVC0 + Zink) comes from the same unified Mesa SDK as NVK.
+    # CEMU_SWITCH_OPENGL=OFF builds a Vulkan-only core for SDKs without GL.
+    set(CEMU_SWITCH_OPENGL ON CACHE BOOL "Build the OpenGL backend into the NVK core")
     set(ENABLE_DEKO3D OFF CACHE BOOL "" FORCE)
-    set(ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
+    set(ENABLE_OPENGL ${CEMU_SWITCH_OPENGL} CACHE BOOL "" FORCE)
     set(ENABLE_VULKAN ON CACHE BOOL "" FORCE)
 endif()
 set(ENABLE_METAL        OFF CACHE BOOL "" FORCE)
