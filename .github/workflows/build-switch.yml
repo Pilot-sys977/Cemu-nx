@@ -1,5 +1,5 @@
 
-name: Check Switch Build Environment
+name: Build Cemu-nx Switch Core
 
 on:
   workflow_dispatch:
@@ -10,49 +10,40 @@ on:
       - .github/workflows/build-switch.yml
 
 jobs:
-  check-switch-toolchain:
+  build-switch:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     container:
       image: ghcr.io/autorunhq/switch-dev:latest
 
+    env:
+      DEVKITPRO: /opt/devkitpro
+      SWITCH_MESA_SDK_ROOT: /opt/devkitpro/portlibs/switch
+      BUILD_JOBS: "2"
+      CEMU_SWITCH_PGO: "OFF"
+
     steps:
-      - name: Download Cemu-nx source
+      - name: Check out modified Cemu-nx
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Check development tools
-        shell: bash
-        run: |
-          echo "=== DEVKITPRO ==="
-          echo "${DEVKITPRO:-not-set}"
-          echo "=== Compilers ==="
-          command -v aarch64-none-elf-gcc || true
-          command -v cmake || true
-          command -v ninja || true
-          echo "=== Switch SDK ==="
-          ls -la /opt/devkitpro/portlibs/switch || true
-
-      - name: Check Mesa compatibility
-        shell: bash
-        run: |
-          SDK=/opt/devkitpro/portlibs/switch
-          echo "=== Graphics libraries ==="
-          find "$SDK" -type f \
-            \( -name 'libnvk.a' \
-            -o -name 'libvulkan.a' \
-            -o -name 'libEGL.a' \
-            -o -name 'libGL.a' \) \
-            -print
-          echo "=== Mesa metadata ==="
-          find "$SDK/share" -maxdepth 4 \
-            -iname '*mesa*' -print || true
-          echo "=== Legacy Mesa package ==="
-          ls /var/cache/pacman/pkg/switch-mesa* \
-            2>/dev/null || true
-
-      - name: Verify HOME button modification
+      - name: Verify HOME mapping
         shell: bash
         run: |
           grep -n 'kButtonId_Home, "Home", "R"' \
             src/platform/switch/SwitchInput.cpp
+
+      - name: Build Switch emulator core
+        shell: bash
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
+          bash dist/switch/build.sh
+
+      - name: Upload compiled core
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modified-cemu-core
+          path: bin/cemu_core.nro
+          if-no-files-found: error
