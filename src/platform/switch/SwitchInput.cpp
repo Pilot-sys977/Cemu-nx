@@ -692,6 +692,7 @@ bool ConfigureMappings(const EmulatedControllerPtr& emu, EmulatedController::Typ
 		using T = WiimoteController;
 		mapBtn(T::kButtonId_A, "A", "A");
 		mapBtn(T::kButtonId_B, "B", "B");
+		mapBtn(T::kButtonId_Home, "Home", "R");
 		mapBtn(T::kButtonId_1, "X", "X");
 		mapBtn(T::kButtonId_2, "Y", "Y");
 		mapBtn(T::kButtonId_Plus, "Plus", "PLUS");
