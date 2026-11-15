@@ -22,25 +22,11 @@ jobs:
         shell: bash
         run: |
           set +e +o pipefail
+          python3 dist/switch/deps/check_mesa_link_closure.py
+          echo "exit=$?"
           P=/opt/devkitpro/portlibs/switch
           NM=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-nm
-          echo "=== cmake dirs ==="; ls $P/lib/cmake
-          echo "=== OpenGL config ==="; for f in $P/lib/cmake/OpenGL/*.cmake; do echo "## $f"; cat "$f"; done
-          echo "=== share ==="; ls -R $P/share | grep -iE 'mesa|nvk|revision' ; cat $P/share/mesa-switch/revision 2>/dev/null
-          echo "=== pc ==="; grep -H '^Version' $P/lib/pkgconfig/*.pc | grep -iE 'gl|egl|vulkan|sdl|elf|drm'
-          echo "=== vulkan libs ==="; ls -la $P/lib/libvulkan* $P/lib/libgallium* $P/lib/libglapi* 2>&1
-          echo "=== undefined elf/drm syms by archive ==="
-          for f in $P/lib/libvulkan.a $P/lib/libnvk.a $P/lib/libnouveau_ws.a $P/lib/libnouveau_horizon.a $P/lib/libEGL.a $P/lib/libGL.a $P/lib/libGLESv2.a $P/lib/libnak_rs.a; do
-            [ -f "$f" ] || continue
-            echo "## $f"; $NM -u "$f" 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(g?elf[0-9]*_|drm|nouveau_(device|bo|pushbuf|client))'
-          done
-          echo "=== defined elf_ anywhere in portlibs? ==="
-          for f in $P/lib/*.a; do $NM --defined-only "$f" 2>/dev/null | grep -qE ' T elf_begin$' && echo "elf_begin in $f"; done
-          echo "=== cache ==="; ls /var/cache/pacman/pkg /opt/devkitpro/pacman/var/cache/pacman/pkg 2>&1
-          echo "=== sync & search ==="
-          dkp-pacman -Sy --noconfirm
-          dkp-pacman -Sl dkp-libs | grep -Ei 'libelf|drm|mesa|libexpat'
-          dkp-pacman -Si switch-libelf switch-mesa switch-libdrm_nouveau
-          dkp-pacman -Sp switch-libelf switch-mesa
-          echo "=== host tools ==="; command -v bison flex python3 make cmake ninja; python3 -c 'import mako; print("mako", mako.__version__)'
-          ls /opt/devkitpro/libnx/lib | grep -i deko; ls /opt/devkitpro/tools/bin | head -50
+          echo "=== which members of libvulkan.a mention elf/cubin ==="
+          $NM -A $P/lib/libvulkan.a 2>/dev/null | grep -iE 'elf|cubin' | head -40
+          ls $P/include | head -100
+          ls $P/share/mesa-switch; cat $P/share/mesa-switch/* 2>/dev/null | head -20
