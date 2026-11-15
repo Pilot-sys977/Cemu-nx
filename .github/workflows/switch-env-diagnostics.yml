@@ -1,0 +1,23 @@
+name: Switch environment diagnostics
+# Read-only inspection of the Switch build container. Builds nothing.
+on:
+  push:
+    branches:
+      - mario-party-10-fix
+    paths:
+      - .github/workflows/switch-env-diagnostics.yml
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/autorunhq/switch-dev:latest
+    steps:
+      - name: Inspect
+        shell: bash
+        run: |
+          set +e +o pipefail
+          grep -rln 'NacpStruct;' /opt/devkitpro/libnx/include /opt/devkitpro/portlibs/switch/include
+          for f in $(grep -rl '} NacpStruct;' /opt/devkitpro/libnx/include /opt/devkitpro/portlibs/switch/include); do echo "## $f"; grep -n -B60 '} NacpStruct;' "$f" | head -80; done
+          grep -n 'NacpLanguageEntry' -r /opt/devkitpro/libnx/include | head
+          cat /opt/devkitpro/libnx/include/switch.h | grep -n nacp
