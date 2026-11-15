@@ -1,0 +1,58 @@
+
+name: Check Switch Build Environment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mario-party-10-fix
+    paths:
+      - .github/workflows/build-switch.yml
+
+jobs:
+  check-switch-toolchain:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/autorunhq/switch-dev:latest
+
+    steps:
+      - name: Download Cemu-nx source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Check development tools
+        shell: bash
+        run: |
+          echo "=== DEVKITPRO ==="
+          echo "${DEVKITPRO:-not-set}"
+          echo "=== Compilers ==="
+          command -v aarch64-none-elf-gcc || true
+          command -v cmake || true
+          command -v ninja || true
+          echo "=== Switch SDK ==="
+          ls -la /opt/devkitpro/portlibs/switch || true
+
+      - name: Check Mesa compatibility
+        shell: bash
+        run: |
+          SDK=/opt/devkitpro/portlibs/switch
+          echo "=== Graphics libraries ==="
+          find "$SDK" -type f \
+            \( -name 'libnvk.a' \
+            -o -name 'libvulkan.a' \
+            -o -name 'libEGL.a' \
+            -o -name 'libGL.a' \) \
+            -print
+          echo "=== Mesa metadata ==="
+          find "$SDK/share" -maxdepth 4 \
+            -iname '*mesa*' -print || true
+          echo "=== Legacy Mesa package ==="
+          ls /var/cache/pacman/pkg/switch-mesa* \
+            2>/dev/null || true
+
+      - name: Verify HOME button modification
+        shell: bash
+        run: |
+          grep -n 'kButtonId_Home, "Home", "R"' \
+            src/platform/switch/SwitchInput.cpp
