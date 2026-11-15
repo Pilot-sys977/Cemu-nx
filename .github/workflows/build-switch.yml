@@ -35,6 +35,13 @@ jobs:
             src/platform/switch/SwitchInput.cpp
 
       
+      - name: Build Boost for Switch
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
+          bash dist/switch/deps/build_boost.sh
+
       - name: Build Switch emulator core
         shell: bash
         run: |
