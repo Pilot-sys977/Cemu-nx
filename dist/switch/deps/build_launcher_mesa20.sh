@@ -133,6 +133,20 @@ tar -xJf "${DOWNLOADS}/${MESA_DIR}.tar.xz" -C "${WORK}"
 	patch -p1 -i "${DOWNLOADS}/switch-mesa-20.1.0-5.patch"
 	patch -p1 -i "${DOWNLOADS}/gl_XML.py.patch"
 	patch -p1 -i "${DOWNLOADS}/glX_XML.py.patch"
+	# Toolchain drift since devkitPro's 2025 build: newlib 4.6 declares
+	# timespec_get() in <time.h>, which collides with Mesa's static C11
+	# fallback. Rename the fallback (and its callers) to a private symbol.
+	python3 - include/c11/threads.h <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+anchor = "#ifndef HAVE_TIMESPEC_GET\n#include <sys/time.h>\n"
+if "mesa_timespec_get" not in text:
+    if anchor not in text:
+        sys.exit("threads.h: timespec_get fallback not found")
+    text = text.replace(anchor, anchor + "#define timespec_get mesa_timespec_get\n", 1)
+    open(path, "w").write(text)
+PY
 
 	# Equivalent of /opt/devkitpro/meson-cross.sh, but with the staged pkg-config.
 	"${DEVKITPRO}/meson-toolchain.sh" switch > "${WORK}/crossfile.txt"
