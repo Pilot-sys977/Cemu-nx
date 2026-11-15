@@ -1,0 +1,63 @@
+name: Switch launcher (reuse prebuilt cores)
+# Fast iteration on the launcher/forwarder only: packages cemu.nro using the
+# cores and launcher inputs from a completed "Build Cemu-nx Switch" run.
+# The full build-switch.yml workflow remains the source of release artifacts.
+on:
+  push:
+    branches:
+      - mario-party-10-fix
+    paths:
+      - .github/workflows/switch-launcher-iterate.yml
+      - switch_launcher/**
+permissions:
+  contents: read
+  actions: read
+env:
+  DEVKITPRO: /opt/devkitpro
+  RELEASE_VERSION: "1.3.2"
+  BUILD_JOBS: "4"
+  # Run whose core artifacts are reused (cores unchanged since commit eb7b600).
+  CORE_RUN_ID: "43744137133"
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/autorunhq/switch-dev:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Download prebuilt cores
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          run-id: ${{ env.CORE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Restore cached launcher Mesa stage
+        uses: actions/cache@v4
+        with:
+          path: dependencies/switch_deps/launcher_mesa20
+          key: launcher-mesa20-${{ hashFiles('dist/switch/deps/build_launcher_mesa20.sh', 'dist/switch/deps/common.sh') }}
+      - name: Stage and package
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ls artifacts
+          bash dist/switch/deps/build_launcher_mesa20.sh
+          mkdir -p bin build_switch_deko/bin
+          cp artifacts/core-nvk/cemu_core.nro bin/cemu_core.nro
+          cp artifacts/core-deko3d/cemu_core.nro build_switch_deko/bin/cemu_core.nro
+          tar -xzf artifacts/launcher-inputs/launcher-inputs.tar.gz
+          CEMU_SWITCH_SKIP_CORES=1 \
+          LAUNCHER_MESA20_ROOT="$GITHUB_WORKSPACE/dependencies/switch_deps/launcher_mesa20/opt/devkitpro/portlibs/switch" \
+            bash build_switch_all.sh
+          [ "$(dd if=switch_launcher/cemu.nro bs=1 skip=16 count=4 2>/dev/null)" = "NRO0" ]
+          (cd switch_launcher && sha256sum cemu.nro romfs/emu/*.nro) | tee SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cemu-nro-iteration
+          path: |
+            switch_launcher/cemu.nro
+            SHA256SUMS.txt
+          if-no-files-found: error

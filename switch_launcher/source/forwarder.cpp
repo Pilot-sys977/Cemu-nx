@@ -656,9 +656,23 @@ bool patch_npdm(std::vector<u8> &npdm, u64 tid)
     return true;
 }
 
+// libnx releases up to v4.12.0 expose NacpStruct::lang; newer snapshots wrap
+// the same 16 entries (TitlesDataFormat 0) in NacpStruct::lang_data.lang.
+template <typename Nacp>
+auto nacp_lang_entries(Nacp &nacp, int) -> decltype((nacp.lang_data.lang))
+{
+    return nacp.lang_data.lang;
+}
+
+template <typename Nacp>
+auto nacp_lang_entries(Nacp &nacp, long) -> decltype((nacp.lang))
+{
+    return nacp.lang;
+}
+
 void patch_nacp(NacpStruct &nacp, const std::string &name, const std::string &author, u64 tid)
 {
-    for (auto &lang : nacp.lang) {
+    for (auto &lang : nacp_lang_entries(nacp, 0)) {
         if (!name.empty()) {
             std::memset(lang.name, 0, sizeof(lang.name));
             std::strncpy(lang.name, name.c_str(), sizeof(lang.name) - 1);
