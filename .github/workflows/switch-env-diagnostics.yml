@@ -1,0 +1,47 @@
+name: Switch environment diagnostics
+# Read-only inspection of the Switch build container. Builds nothing.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - mario-party-10-fix
+    paths:
+      - .github/workflows/switch-env-diagnostics.yml
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/autorunhq/switch-dev:latest
+    env:
+      DEVKITPRO: /opt/devkitpro
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Inspect
+        shell: bash
+        run: |
+          set -x
+          P=/opt/devkitpro/portlibs/switch
+          NM=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-nm
+          cat /etc/os-release | head -3
+          grep -vE '^\s*(#|$)' /opt/devkitpro/pacman/etc/pacman.conf /etc/pacman.conf 2>/dev/null || true
+          ls /etc/pacman.d 2>/dev/null || true
+          dkp-pacman -Q || true
+          ls -la $P/lib | head -200
+          ls $P/lib/cmake || true
+          ls -R $P/lib/cmake/OpenGL 2>/dev/null && cat $P/lib/cmake/OpenGL/*.cmake | head -200
+          ls -R $P/share | head -60
+          cat $P/lib/pkgconfig/vulkan.pc $P/lib/pkgconfig/glesv2.pc $P/lib/pkgconfig/egl.pc 2>/dev/null || true
+          ls /var/cache/pacman/pkg /opt/devkitpro/pacman/var/cache/pacman/pkg 2>/dev/null || true
+          echo "=== undefined symbols in unified libvulkan.a (elf/drm/nouveau) ==="
+          $NM -u $P/lib/libvulkan.a 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(elf|gelf|drm|nouveau|XML_|ZSTD_|inflate|deflate|crc32)' || true
+          echo "=== are they defined anywhere inside the archive? ==="
+          $NM --defined-only $P/lib/libvulkan.a 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(elf_|gelf_|drm|nouveau_device)' | head -20 || true
+          for f in $P/lib/libGL*.a $P/lib/libEGL*.a $P/lib/libgallium*.a; do [ -f "$f" ] || continue; echo "== $f"; $NM -u "$f" 2>/dev/null | awk '{print $NF}' | sort -u | grep -E '^(elf|gelf|drm|nouveau)' | head -40; done
+          echo "=== sync & search packages ==="
+          dkp-pacman -Sy --noconfirm || true
+          dkp-pacman -Sl | grep -Ei 'libelf|drm|mesa|sdl2|ntfs|deko3d|turbo|expat' || true
+          dkp-pacman -Si switch-libelf switch-libdrm_nouveau switch-mesa || true
+          command -v bison flex python3; python3 -c 'import mako; print(mako.__version__)' || true
+          ls $P/include/SDL2 2>/dev/null | head -3; ls $P/lib/libSDL2* $P/lib/libntfs* /opt/devkitpro/libnx/lib/libdeko3d* 2>/dev/null || true
