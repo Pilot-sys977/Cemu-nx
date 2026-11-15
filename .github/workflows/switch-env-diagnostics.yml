@@ -17,7 +17,6 @@ jobs:
         shell: bash
         run: |
           set +e +o pipefail
-          grep -rln 'NacpStruct;' /opt/devkitpro/libnx/include /opt/devkitpro/portlibs/switch/include
-          for f in $(grep -rl '} NacpStruct;' /opt/devkitpro/libnx/include /opt/devkitpro/portlibs/switch/include); do echo "## $f"; grep -n -B60 '} NacpStruct;' "$f" | head -80; done
-          grep -n 'NacpLanguageEntry' -r /opt/devkitpro/libnx/include | head
-          cat /opt/devkitpro/libnx/include/switch.h | grep -n nacp
+          sed -n '1,80p' /opt/devkitpro/libnx/include/switch/nacp.h
+          grep -n 'NacpStruct\|langentry\|NacpLanguageEntry' /opt/devkitpro/libnx/include/switch/nacp.h
+          ls -la /opt/devkitpro/libnx/include/switch/nacp.h
