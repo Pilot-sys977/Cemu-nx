@@ -1,6 +1,6 @@
 
 name: Build Cemu-nx Switch Core
-
+#change
 on:
   workflow_dispatch:
   push:
