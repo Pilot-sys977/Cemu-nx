@@ -8,7 +8,7 @@ on:
       - mario-party-10-fix
     paths:
       - .github/workflows/build-switch.yml
-
+      - dist/switch/build.sh
 jobs:
   build-switch:
     runs-on: ubuntu-latest
