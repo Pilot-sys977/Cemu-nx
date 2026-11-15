@@ -48,6 +48,12 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           export PATH="$DEVKITPRO/tools/bin:$DEVKITPRO/devkitA64/bin:$PATH"
+          echo "=== Searching for libelf ==="
+          find /opt/devkitpro -name 'libelf.a' -print
+          echo "=== Checking libelf headers ==="
+          find /opt/devkitpro -name 'libelf.h' -print
+          echo "=== Checking Switch package manager ==="
+          command -v dkp-pacman || true
           bash dist/switch/build.sh
 
       - name: Upload compiled core
