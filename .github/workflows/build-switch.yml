@@ -9,6 +9,7 @@ on:
     paths:
       - .github/workflows/build-switch.yml
       - dist/switch/build.sh
+      - cmake/Toolchain-Switch.cmake
 jobs:
   build-switch:
     runs-on: ubuntu-latest
