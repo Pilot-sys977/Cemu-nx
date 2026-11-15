@@ -54,6 +54,10 @@ jobs:
           find /opt/devkitpro -name 'libelf.h' -print
           echo "=== Checking Switch package manager ==="
           command -v dkp-pacman || true
+          echo "=== Available libelf packages ==="
+          dkp-pacman -Ss libelf || true
+          echo "=== Available Switch ELF packages ==="
+          dkp-pacman -Sl switch | grep -Ei 'elf|mesa' || true
           bash dist/switch/build.sh
 
       - name: Upload compiled core
